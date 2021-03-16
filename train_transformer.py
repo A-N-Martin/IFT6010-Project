@@ -261,7 +261,8 @@ def train_transformer(
         tf.print(f"Time taken for 1 epoch: {time.time() - start} secs\n")
 
     # Compute bleu score on best performing model
-    temp_file = os.path.join(project_root(), "temp_preds.txt")
+    #temp_file = os.path.join(project_root(), "temp_preds.txt")
+    temp_file = os.path.join(save_path, "temp_preds.txt")
     generate_predictions(source_validation, temp_file, save_path, config_path)
     compute_bleu(temp_file, target_validation, print_all_scores)
     os.remove(temp_file)

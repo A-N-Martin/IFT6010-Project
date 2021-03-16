@@ -82,8 +82,8 @@ def generate_predictions(
         translation_batch_size = 32
     else:
         translation_batch_size = config["translation_batch_size"]
-    tokenizer_source = tfds.features.text.SubwordTextEncoder.load_from_file(tokenizer_source_path)
-    tokenizer_target = tfds.features.text.SubwordTextEncoder.load_from_file(tokenizer_target_path)
+    tokenizer_source = tfds.deprecated.text.SubwordTextEncoder.load_from_file(tokenizer_source_path)
+    tokenizer_target = tfds.deprecated.text.SubwordTextEncoder.load_from_file(tokenizer_target_path)
 
     transformer = load_transformer(config, tokenizer_source, tokenizer_target)
 
