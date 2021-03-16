@@ -15,10 +15,9 @@ from tensorflow.python.framework.errors_impl import NotFoundError
 
 from scripts.config import ConfigTrainTransformer
 from utils.data_utils import (build_tokenizer, create_transformer_dataset,
-                                  project_root)
+                              project_root)
 from utils.tensorboard_utils import get_summary_tf, hparams_transformer
-from utils.transformer_utils import (CustomSchedule, create_masks,
-                                         load_transformer)
+from utils.transformer_utils import (CustomSchedule, create_masks, load_transformer)
 from evaluator import generate_predictions, compute_bleu
 
 # The following config setting is necessary to work on my local RTX2070 GPU

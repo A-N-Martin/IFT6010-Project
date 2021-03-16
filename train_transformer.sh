@@ -17,5 +17,5 @@ fi
 # Launch your job, and look for the dataset into $SLURM_TMPDIR
 python -m train_transformer \
         --cfg_path "${cfg_path}" \
-        --data_path "${FOLDER}/data" \
+        --data_path "${FOLDER}" \
         --save_path "${CODE_FOLDER}/results"
