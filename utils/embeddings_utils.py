@@ -7,7 +7,7 @@ import tensorflow_datasets as tfds
 import numpy as np
 
 
-def token_to_subword(token: int, tokenizer: tfds.features.text.SubwordTextEncoder) -> str:
+def token_to_subword(token: int, tokenizer: tfds.deprecated.text.SubwordTextEncoder) -> str:
     """
     Give subword corresponding to token id
     :param token: Token (index)
@@ -22,7 +22,7 @@ def token_to_subword(token: int, tokenizer: tfds.features.text.SubwordTextEncode
 
 
 def break_file_into_subwords(input_file_path: str, output_file_path: str,
-                             tokenizer: tfds.features.text.SubwordTextEncoder) -> None:
+                             tokenizer: tfds.deprecated.text.SubwordTextEncoder) -> None:
     with open(input_file_path) as in_f:
         with open(output_file_path, "w") as out_f:
             for line in in_f.readlines():
@@ -35,7 +35,7 @@ def break_file_into_subwords(input_file_path: str, output_file_path: str,
 
 
 def get_pretrained_weights(embedding_weights: np.ndarray,
-                           tokenizer: tfds.features.text.SubwordTextEncoder,
+                           tokenizer: tfds.deprecated.text.SubwordTextEncoder,
                            word2vec_model_path: str):
     word2vec_model = KeyedVectors.load(word2vec_model_path)
     # the last 2 weights are for start/end tokens

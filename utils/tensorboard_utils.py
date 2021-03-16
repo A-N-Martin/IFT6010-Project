@@ -4,7 +4,7 @@ from typing import Dict
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 
-from src.config import ConfigTrainTransformer
+from scripts.config import ConfigTrainTransformer
 
 
 def get_summary_tf(save_path: str, hparams: Dict):

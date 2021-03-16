@@ -13,8 +13,8 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 from tensorflow.compat.v1 import ConfigProto, InteractiveSession
 
-from src.utils.transformer_utils import load_transformer, translate_file
-from src.utils.data_utils import project_root
+from utils.transformer_utils import load_transformer, translate_file
+from utils.data_utils import project_root
 
 # The following config setting is necessary to work on my local RTX2070 GPU
 # Comment if you suspect it's causing trouble

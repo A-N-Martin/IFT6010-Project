@@ -33,7 +33,9 @@ os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 def load_tokenizer(name: str, path: str, input_file: List[str], vocab_size: int):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
-        tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(path)
+
+        tokenizer = tfds.deprecated.text.SubwordTextEncoder.load_from_file(path)
+        #tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(path)
         tf.print(f"Loaded {name} tokenizer from {path}")
     except NotFoundError:
         tf.print(f"Could not find {name} tokenizer in {path}, building tokenizer...")
@@ -41,7 +43,8 @@ def load_tokenizer(name: str, path: str, input_file: List[str], vocab_size: int)
         tokenizer.save_to_file(path)
         tf.print(f"{name} tokenizer saved to {path}")
         # Reload to avoid weird error about mismatch vocabulary size
-        tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(path)
+        tokenizer = tfds.deprecated.text.SubwordTextEncoder.load_from_file(path)
+        #tokenizer = tfds.features.text.SubwordTextEncoder.load_from_file(path)
 
     return tokenizer
 

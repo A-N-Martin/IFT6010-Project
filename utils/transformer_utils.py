@@ -33,8 +33,10 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
 def load_transformer(
         config: Union[ConfigTrainTransformer, ConfigEvalTransformer],
-        tokenizer_source: tfds.features.text.SubwordTextEncoder,
-        tokenizer_target: tfds.features.text.SubwordTextEncoder,
+        tokenizer_source: tfds.deprecated.text.SubwordTextEncoder,
+        tokenizer_target: tfds.deprecated.text.SubwordTextEncoder,
+        #tokenizer_source: tfds.features.text.SubwordTextEncoder,
+        #tokenizer_target: tfds.features.text.SubwordTextEncoder,
         source_lang_model_path: Optional[str] = None,
         target_lang_model_path: Optional[str] = None,
         train_encoder_embedding: bool = True,
@@ -135,8 +137,8 @@ def create_masks(inp, tar):
     return enc_padding_mask, combined_mask, dec_padding_mask
 
 
-def evaluate_old(inp_sentence: str, tokenizer_source: tfds.features.text.SubwordTextEncoder,
-                 tokenizer_target: tfds.features.text.SubwordTextEncoder, max_length_pred: int,
+def evaluate_old(inp_sentence: str, tokenizer_source: tfds.deprecated.text.SubwordTextEncoder,
+                 tokenizer_target: tfds.deprecated.text.SubwordTextEncoder, max_length_pred: int,
                  transformer: Transformer) -> Tuple:
     """
     Deprecated, used only by the translate method that don't use batches
@@ -187,7 +189,7 @@ def evaluate_old(inp_sentence: str, tokenizer_source: tfds.features.text.Subword
 
 
 def evaluate(encoder_input: tf.Tensor,
-             tokenizer_target: tfds.features.text.SubwordTextEncoder,
+             tokenizer_target: tfds.deprecated.text.SubwordTextEncoder,
              transformer: Transformer,
              beam_size: Optional[int],
              alpha: Optional[float]) -> tf.Tensor:
@@ -366,8 +368,8 @@ def plot_attention_weights(attention, sentence, result, layer, tokenizer_source,
     plt.show()
 
 
-def translate_string(inp_sentence: str, tokenizer_source: tfds.features.text.SubwordTextEncoder,
-                     tokenizer_target: tfds.features.text.SubwordTextEncoder, max_length_pred: int,
+def translate_string(inp_sentence: str, tokenizer_source: tfds.deprecated.text.SubwordTextEncoder,
+                     tokenizer_target: tfds.deprecated.text.SubwordTextEncoder, max_length_pred: int,
                      transformer: Transformer, plot: str = "") -> str:
     """
     Deprecated, still works for a single example and can plot attention
@@ -413,7 +415,7 @@ def _get_sorted_inputs(filename: str, max_line_process: Optional[int]) -> Tuple:
     return sorted_inputs, sorted_keys
 
 
-def _encode_and_add_tokens(sentence: str, tokenizer: tfds.features.text.SubwordTextEncoder) -> List[int]:
+def _encode_and_add_tokens(sentence: str, tokenizer: tfds.deprecated.text.SubwordTextEncoder) -> List[int]:
     """
     Encode sentence and add start and end tokens
     :param sentence: Input sentence
@@ -425,7 +427,7 @@ def _encode_and_add_tokens(sentence: str, tokenizer: tfds.features.text.SubwordT
     return [start_token] + tokenizer.encode(sentence) + [end_token]
 
 
-def _trim_and_decode(ids: List[int], tokenizer: tfds.features.text.SubwordTextEncoder) -> str:
+def _trim_and_decode(ids: List[int], tokenizer: tfds.deprecated.text.SubwordTextEncoder) -> str:
     """
     Decode list of tokens to string
     :param ids: List of tokens
@@ -443,8 +445,8 @@ def _trim_and_decode(ids: List[int], tokenizer: tfds.features.text.SubwordTextEn
 
 
 def translate_file(transformer: Transformer,
-                   tokenizer_source: tfds.features.text.SubwordTextEncoder,
-                   tokenizer_target: tfds.features.text.SubwordTextEncoder,
+                   tokenizer_source: tfds.deprecated.text.SubwordTextEncoder,
+                   tokenizer_target: tfds.deprecated.text.SubwordTextEncoder,
                    input_file: str,
                    beam_size: Optional[int],
                    alpha: Optional[float],
