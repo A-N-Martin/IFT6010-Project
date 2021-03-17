@@ -18,4 +18,4 @@ fi
 python -m train_transformer \
         --cfg_path "${cfg_path}" \
         --data_path "${FOLDER}" \
-        --save_path "${CODE_FOLDER}/results"
+        --save_path "${FOLDER}/results"
