@@ -1,0 +1,22 @@
+{
+  "num_examples": null,
+  "num_layers": 6,
+  "d_model": 512,
+  "dff": 2048,
+  "num_heads": 4,
+  "dropout_rate": 0.1,
+  "batch_size": 64,
+  "epochs": 100,
+  "source_training": "data/text/task1/tok/train.lc.norm.tok.de",
+  "source_validation": "data/text/task1/tok/val.lc.norm.tok.de",
+  "source_target_vocab_size": 8192,
+  "target_training": "data/text/task1/tok/train.lc.norm.tok.en",
+  "target_validation": "data/text/task1/tok/val.lc.norm.tok.en",
+  "target_target_vocab_size": 8192,
+  "checkpoint_path": "checkpoints/transformer/train",
+  "checkpoint_path_best": "checkpoints/transformer/best",
+  "tokenizer_source_path": "tokenizer/tokenizer_de.save",
+  "tokenizer_target_path": "tokenizer/tokenizer_en.save",
+  "train_encoder_embedding": true,
+  "train_decoder_embedding": true
+}
