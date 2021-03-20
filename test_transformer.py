@@ -1,5 +1,5 @@
 """
-Train a transformer model to translate from source to target language
+Test a trained transformer model to translate from source to target language
 """
 
 import argparse
