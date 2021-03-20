@@ -14,8 +14,8 @@ if [ ! -e "${cfg_path}" ]; then
     exit 1
 fi
 
-# Launch your job
-python -m train_transformer \
+# Launch job
+python -m test_transformer \
         --cfg_path "${cfg_path}" \
         --data_path "${FOLDER}" \
-        --save_path "${FOLDER}/results"
+        --save_path "${FOLDER}/results"        
