@@ -1,6 +1,6 @@
 #!/bin/bash
 
-FOLDER="/home/Allmightyme/IFT6010-Project"
+FOLDER="/Users/mombot/Documents/Courses/IFT6010/Projet/IFT6010-Project"
 config_file=${1}
 cfg_path="${FOLDER}/config_files/${config_file}"
 
@@ -14,8 +14,8 @@ if [ ! -e "${cfg_path}" ]; then
     exit 1
 fi
 
-# Launch your job
-python -m train_transformer \
+# Launch job
+python -m test_transformer \
         --cfg_path "${cfg_path}" \
         --data_path "${FOLDER}" \
-        --save_path "${FOLDER}/results"
+        --save_path "${FOLDER}/results"        
