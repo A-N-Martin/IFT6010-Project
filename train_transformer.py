@@ -1,5 +1,5 @@
 """
-Train a transformer model to translate from source to target language
+Train a unimodal or multimodal transformer model to translate from source to target language
 """
 
 import argparse
@@ -15,7 +15,7 @@ from tensorflow.python.framework.errors_impl import NotFoundError
 
 from scripts.config import ConfigTrainTransformer
 from utils.data_utils import (build_tokenizer, create_transformer_dataset,
-                              project_root)
+                              project_root, get_features)
 from utils.tensorboard_utils import get_summary_tf, hparams_transformer
 from utils.transformer_utils import (CustomSchedule, create_masks, load_transformer)
 from evaluator import generate_predictions, compute_bleu
@@ -76,6 +76,13 @@ def train_transformer(
 
     tokenizer_source_path = os.path.join(save_path, config["tokenizer_source_path"])
     tokenizer_target_path = os.path.join(save_path, config["tokenizer_target_path"])
+
+    multi = config["multi"] # if true, multimodal transformer receives image and text features
+    if multi:
+        vfeat_paths = (config["vfeature_training"], config["vfeature_validation"])
+        # return numpy arrays... (for now)
+        vfeat_train, vfeat_val = get_features(vfeat_paths, config["vfeature_dims"])
+
 
     # Set hyperparameters
     d_model = config["d_model"]

@@ -1,6 +1,7 @@
 {
   "debug": false,
   "num_examples": null,
+  "multi": false,
   "num_layers": 4,
   "d_model": 256,
   "dff": 1024,

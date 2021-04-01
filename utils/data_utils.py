@@ -9,6 +9,8 @@ from gensim.models import KeyedVectors
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+import bz2
+import numpy as np
 
 def project_root() -> str:
     """Returns project root folder."""
@@ -164,3 +166,20 @@ def build_tokenizer(file, target_vocab_size=2 ** 13):
     #tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(
         (line for line in language), target_vocab_size=target_vocab_size)
     return tokenizer
+
+def get_features(vfeat_paths, vfeat_dim):
+    '''
+    Data type is .npy file saved from numpy with np.save() with feature-extractor.py script, compressed with bz2
+    e.g., np.save(output + '-avgpool', pool_feats.astype('float16'))
+
+    avgpool features of size 2048D (1D, flattened array per input image)
+    res4f_relu convolutional features of size 1024x14x14
+
+    '''
+    f_train = bz2.open(vfeat_paths[0])
+    vfeat_train = np.load(f_train) # numpy array, dim = num_ex x features
+
+    f_val = bz2.open(vfeat_paths[1])
+    vfeat_val = np.load(f_val)
+
+    return vfeat_train, vfeat_val
