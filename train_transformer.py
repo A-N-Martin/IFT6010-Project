@@ -15,7 +15,7 @@ from tensorflow.python.framework.errors_impl import NotFoundError
 
 from scripts.config import ConfigTrainTransformer
 from utils.data_utils import (build_tokenizer, create_transformer_dataset,
-                              project_root, get_features)
+                              create_transformer_multi_dataset, project_root, get_features)
 from utils.tensorboard_utils import get_summary_tf, hparams_transformer
 from utils.transformer_utils import (CustomSchedule, create_masks, load_transformer)
 from evaluator import generate_predictions, compute_bleu
@@ -79,15 +79,17 @@ def train_transformer(
 
     multi = config["multi"] # if true, multimodal transformer receives image and text features
     if multi:
-        vfeat_paths = (config["vfeature_training"], config["vfeature_validation"])
-        # return numpy arrays... (for now)
-        vfeat_train, vfeat_val = get_features(vfeat_paths, config["vfeature_dims"])
-
+        vf_train_path = os.path.join(data_path, config["vfeature_training"])
+        vf_valid_path = os.path.join(data_path, config["vfeature_validation"])
+        # return tupple of numpy arrays... (for now)
+        vfeat_training, vfeat_validation = get_features((vf_train_path, vf_valid_path), config["vfeature_dims"])
+        #print(vfeat_train.shape, vfeat_val.shape)
 
     # Set hyperparameters
     d_model = config["d_model"]
     batch_size = config["batch_size"]
     epochs = config["epochs"]
+    vf_dim = config["vfeature_dims"]
 
     checkpoint_path = os.path.join(save_path, config["checkpoint_path"])
     checkpoint_path_best = os.path.join(save_path, config["checkpoint_path_best"])
@@ -115,6 +117,16 @@ def train_transformer(
 
         return source_tokenized, target_tokenized
 
+    def encode_multi(source, target, img):
+        # Add start and end token to text
+        source_tokenized = [tokenizer_source.vocab_size] + tokenizer_source.encode(
+            source.numpy()) + [tokenizer_source.vocab_size + 1]
+
+        target_tokenized = [tokenizer_target.vocab_size] + tokenizer_target.encode(
+            target.numpy()) + [tokenizer_target.vocab_size + 1]
+
+        return source_tokenized, target_tokenized, img
+
     def tf_encode(source, target):
         # encapsulate our encode function in a tf functions so it can be called on tf tensor
         result_source, result_target = tf.py_function(encode, [source, target], [tf.int64, tf.int64])
@@ -123,24 +135,59 @@ def train_transformer(
 
         return result_source, result_target
 
-    train_examples = create_transformer_dataset(
-        source_training, target_training, num_examples)
+    def tf_encode_multi(source, target, img):
+        # encapsulate our encode function in a tf functions so it can be called on tf tensor
+        result_source, result_target, result_img = tf.py_function(encode_multi, [source, target, img], [tf.int64, tf.int64, tf.float16])
+        result_source.set_shape([None])
+        result_target.set_shape([None])
+        # DO NOT set shape of image tensor to [None]: will create problems at padding if 3D is flattened
+        #result_target.set_shape(vf_dim)
 
-    validation_examples = create_transformer_dataset(source_validation, target_validation)
+        return result_source, result_target, result_img
 
-    train_preprocessed = (
-        # cache the dataset to memory to get a speedup while reading from it.
-        train_examples.map(tf_encode).cache().shuffle(buffer_size)
-    )
+    if multi:
+        # Multimodal adaptation based on: https://www.tensorflow.org/tutorials/text/image_captioning
+        train_examples = create_transformer_multi_dataset(
+            source_training, target_training, vfeat_training, num_examples)
 
-    val_preprocessed = (validation_examples.map(tf_encode))
+        validation_examples = create_transformer_multi_dataset(source_validation, target_validation,
+                                                               vfeat_validation)
+                                                               
+        train_preprocessed = (
+            # cache the dataset to memory to get a speedup while reading from it.
+            # Shuffling will shuffle entire train set between epochs
+            # Check here: https://www.tensorflow.org/tutorials/text/image_captioning
+            train_examples.map(tf_encode_multi).cache().shuffle(buffer_size)
+        )
 
-    train_dataset = (train_preprocessed
-                     .padded_batch(batch_size, padded_shapes=([None], [None]))
-                     .prefetch(tf.data.experimental.AUTOTUNE))
+        val_preprocessed = (validation_examples.map(tf_encode_multi))
 
-    val_dataset = (val_preprocessed
-                   .padded_batch(1000, padded_shapes=([None], [None])))
+        train_dataset = (train_preprocessed
+                         .padded_batch(batch_size, padded_shapes=([None], [None], vf_dim))
+                         .prefetch(tf.data.experimental.AUTOTUNE))
+
+        val_dataset = (val_preprocessed
+                       .padded_batch(1000, padded_shapes=([None], [None], vf_dim)))
+
+    else:
+        train_examples = create_transformer_dataset(
+            source_training, target_training, num_examples)
+
+        validation_examples = create_transformer_dataset(source_validation, target_validation)
+
+        train_preprocessed = (
+            # cache the dataset to memory to get a speedup while reading from it.
+            train_examples.map(tf_encode).cache().shuffle(buffer_size)
+        )
+
+        val_preprocessed = (validation_examples.map(tf_encode))
+
+        train_dataset = (train_preprocessed
+                         .padded_batch(batch_size, padded_shapes=([None], [None]))
+                         .prefetch(tf.data.experimental.AUTOTUNE))
+
+        val_dataset = (val_preprocessed
+                       .padded_batch(1000, padded_shapes=([None], [None])))
 
     # Use the Adam optimizer with a custom learning rate scheduler according to the formula
     # in the paper (https://arxiv.org/abs/1706.03762)

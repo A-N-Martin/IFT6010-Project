@@ -102,6 +102,44 @@ def create_transformer_dataset(
     return dataset
 
 
+def create_transformer_multi_dataset(
+        source: str,
+        target: Optional[str],
+        img_feat,
+        num_examples: Optional[int] = None,
+) -> tf.data.Dataset:
+    """
+    Takes a source and target file and return a dataset
+    :param source: path to source file
+    :param target: path to target file
+    :param img_feat: numpy array of image features
+    :param num_examples: max number of examples, take all if None
+    :return: tf Dataset object
+    """
+    with open(source, encoding="UTF-8") as source_file:
+        source_lines = source_file.readlines()
+    if target is not None:
+        with open(target, encoding="UTF-8") as target_file:
+            target_lines = target_file.readlines()
+        assert len(source_lines) == len(target_lines)
+
+    source_data = []
+    target_data = []
+    for source_line in source_lines[:num_examples]:
+        source_data.append(source_line.strip())
+    if target is not None:
+        for target_line in target_lines[:num_examples]:
+            target_data.append(target_line.strip())
+    else:
+        target_data = [""] * len(source_lines)
+
+    if num_examples is not None:
+        img_feat = img_feat[:num_examples]
+
+    dataset = tf.data.Dataset.from_tensor_slices((source_data, target_data, img_feat))
+    return dataset
+
+
 def tokenize(lang: List[str], lang_model: Optional[KeyedVectors]) -> Tuple:
     """
     Transforms a list of sentence into a list of list of indexes the correspond to their index in the
