@@ -152,7 +152,7 @@ def train_transformer(
 
         validation_examples = create_transformer_multi_dataset(source_validation, target_validation,
                                                                vfeat_validation)
-                                                               
+
         train_preprocessed = (
             # cache the dataset to memory to get a speedup while reading from it.
             # Shuffling will shuffle entire train set between epochs
@@ -224,48 +224,105 @@ def train_transformer(
             ckpt.restore(ckpt_manager.latest_checkpoint)
             tf.print(f'Latest checkpoint restored from {checkpoint_path}')
 
-    train_step_signature = [
-        tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-        tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-    ]
 
-    @tf.function(input_signature=train_step_signature)
-    def train_step(inp, tar):
-        tar_inp = tar[:, :-1]
-        tar_real = tar[:, 1:]
+    if multi:
+        im_dims = tuple([None] + vf_dim)
+        train_step_signature = [
+            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=im_dims, dtype=tf.float16))
+        ]
 
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+        @tf.function(input_signature=train_step_signature)
+        def train_step(train_input):
+            inp, tar, img = train_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
 
-        with tf.GradientTape() as tape:
-            predictions, _ = transformer(inp, tar_inp,
+            # TODO: adjust mask dims for input?
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp, tuple(vf_dim))
+
+            inp_tuple = inp, tar_inp, img
+            with tf.GradientTape() as tape:
+                predictions, _ = transformer(inp_tuple,
+                                             True,
+                                             enc_padding_mask,
+                                             combined_mask,
+                                             dec_padding_mask)
+                loss = loss_function(tar_real, predictions)
+
+            gradients = tape.gradient(loss, transformer.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+
+            train_loss(loss)
+            train_accuracy(tar_real, predictions)
+
+        #@tf.function(input_signature=train_step_signature)
+        def validate(val_input):
+            inp, tar, img = val_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
+
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp, tuple(vf_dim))
+
+            inp_tuple = inp, tar_inp, img
+            predictions, _ = transformer(inp_tuple,
                                          True,
                                          enc_padding_mask,
                                          combined_mask,
                                          dec_padding_mask)
             loss = loss_function(tar_real, predictions)
 
-        gradients = tape.gradient(loss, transformer.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+            val_loss(loss)
+            val_accuracy(tar_real, predictions)
 
-        train_loss(loss)
-        train_accuracy(tar_real, predictions)
+    else:
+        train_step_signature = [
+            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=(None, None), dtype=tf.int64))
+        ]
 
-    @tf.function(input_signature=train_step_signature)
-    def validate(inp, tar):
-        tar_inp = tar[:, :-1]
-        tar_real = tar[:, 1:]
+        @tf.function(input_signature=train_step_signature)
+        def train_step(train_input):
+            inp, tar = train_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
 
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
 
-        predictions, _ = transformer(inp, tar_inp,
-                                     True,
-                                     enc_padding_mask,
-                                     combined_mask,
-                                     dec_padding_mask)
-        loss = loss_function(tar_real, predictions)
+            inp_tuple = inp, tar_inp
+            with tf.GradientTape() as tape:
+                predictions, _ = transformer(inp_tuple,
+                                             True,
+                                             enc_padding_mask,
+                                             combined_mask,
+                                             dec_padding_mask)
+                loss = loss_function(tar_real, predictions)
 
-        val_loss(loss)
-        val_accuracy(tar_real, predictions)
+            gradients = tape.gradient(loss, transformer.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+
+            train_loss(loss)
+            train_accuracy(tar_real, predictions)
+
+        @tf.function(input_signature=train_step_signature)
+        def validate(val_input):
+            inp, tar = val_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
+
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+
+            inp_tuple = inp, tar_inp
+            predictions, _ = transformer(inp_tuple,
+                                         True,
+                                         enc_padding_mask,
+                                         combined_mask,
+                                         dec_padding_mask)
+            loss = loss_function(tar_real, predictions)
+
+            val_loss(loss)
+            val_accuracy(tar_real, predictions)
 
     n_train_examples = int(tf.data.experimental.cardinality(train_examples).numpy())
     tf.print(f"Total of {n_train_examples} training examples")
@@ -282,18 +339,21 @@ def train_transformer(
         val_loss.reset_states()
         val_accuracy.reset_states()
 
-        for (batch, (inp, tar)) in enumerate(train_dataset):
-            train_step(inp, tar)
+        for (batch, input_tuple) in enumerate(train_dataset):
+                # input_tuple = (inp, tar, img) if multi else (inp, tar)
+                train_step(input_tuple)
 
-            if batch % 50 == 0:
-                tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
-                         f"Accuracy {train_accuracy.result():.4f}")
+                if batch % 50 == 0:
+                    tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
+                             f"Accuracy {train_accuracy.result():.4f}")
 
-        for (batch, (inp, tar)) in enumerate(val_dataset):
-            validate(inp, tar)
-            val_accuracy_result = val_accuracy.result()
-            tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
-                     f"Validation Accuracy {val_accuracy_result:.4f}")
+        for (batch, input_tuple) in enumerate(val_dataset):
+                # input_tuple = (inp, tar, img) if multi else (inp, tar)
+                validate(input_tuple)
+                val_accuracy_result = val_accuracy.result()
+                tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
+                         f"Validation Accuracy {val_accuracy_result:.4f}")
+
         if val_accuracy_result > best_val_accuracy:
             best_val_accuracy = val_accuracy_result
             ckpt_save_path_best = ckpt_manager_best.save()
@@ -317,6 +377,7 @@ def train_transformer(
     # Compute bleu score on best performing model
     #temp_file = os.path.join(project_root(), "temp_preds.txt")
     temp_file = os.path.join(save_path, "temp_preds.txt")
+    # TODO: check w image input, adjust code to generate predictions?
     generate_predictions(source_validation, temp_file, save_path, config_path)
     compute_bleu(temp_file, target_validation, print_all_scores)
     os.remove(temp_file)

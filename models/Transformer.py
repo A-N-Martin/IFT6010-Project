@@ -109,16 +109,17 @@ class EncoderLayer(tf.keras.layers.Layer):
         self.dropout1 = tf.keras.layers.Dropout(rate)
         self.dropout2 = tf.keras.layers.Dropout(rate)
 
-    def call(self, x, training, mask):
-        attn_output, _ = self.mha(x, x, x, mask)  # (batch_size, input_seq_len, d_model)
+    def call(self, w_emb, x, training, mask):
+        # Note: if multi, x = word + vis features (concat), else x = w_emb (just word embedding)
+        attn_output, _ = self.mha(w_emb, w_emb, x, mask)  # (batch_size, seq_len_x, d_model)
         attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(x + attn_output)  # (batch_size, input_seq_len, d_model)
+        out1 = self.layernorm1(x + attn_output)  # (batch_size, seq_len_x, d_model)
 
-        ffn_output = self.ffn(out1)  # (batch_size, input_seq_len, d_model)
+        ffn_output = self.ffn(out1)  # (batch_size, seq_len_x, d_model)
         ffn_output = self.dropout2(ffn_output, training=training)
-        out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, input_seq_len, d_model)
+        out2 = self.layernorm2(out1 + ffn_output)  # (batch_size, seq_len_x, d_model)
 
-        return out2
+        return out2 # (batch_size, seq_len_x, d_model)
 
 
 class DecoderLayer(tf.keras.layers.Layer):
@@ -160,35 +161,76 @@ class DecoderLayer(tf.keras.layers.Layer):
 
 class Encoder(tf.keras.layers.Layer):
     def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
-                 maximum_position_encoding, rate=0.1, name=None, train_embedding=True):
+                 maximum_position_encoding, rate=0.1, multi=False, vf_dim=None,
+                 name=None, train_embedding=True):
         super(Encoder, self).__init__(name=name)
 
         self.d_model = d_model
         self.num_layers = num_layers
+        self.multi = multi
+        self.vf_dim = vf_dim
+
+        if multi:
+            # projects number of visual features per "pixel" to dim = d_model
+            self.img_projector = tf.keras.layers.Dense(d_model, name="img_projector")
 
         self.embedding = tf.keras.layers.Embedding(input_vocab_size, d_model, name="embedding",
                                                    trainable=train_embedding)
-        self.pos_encoding = positional_encoding(maximum_position_encoding,
-                                                self.d_model)
+        if multi and (len(vf_dim) > 1):
+            self.pos_encoding = positional_encoding(maximum_position_encoding+(vf_dim[1]*vf_dim[2]),
+                                                    self.d_model)
+        else:
+            self.pos_encoding = positional_encoding(maximum_position_encoding+1,
+                                                    self.d_model)
+
+        # NOTE: if NO positional encoding applied to image features, then use this instead
+        #self.pos_encoding = positional_encoding(maximum_position_encoding,
+        #                                        self.d_model)
 
         self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate)
                            for _ in range(num_layers)]
 
         self.dropout = tf.keras.layers.Dropout(rate)
 
-    def call(self, x, training, mask):
+    def call(self, x, training, mask, img=None):
+        vf_len = None
+        if self.multi:
+            # convert img from (batch, 1024, 14, 14) to (batch, 14x14, 1024)
+            # OR from (batch, 2048) to (batch, 1, 2048)
+            if len(self.vf_dim) > 1:
+                vf_len = self.vf_dim[1]*self.vf_dim[2] # num spatial_locations for img input
+                img = tf.transpose(img, perm=[0, 2, 3, 1])
+            else:
+                vf_len = 1
+            img = tf.cast(tf.reshape(img, (-1, vf_len, self.vf_dim[0])), tf.float32) # (batch_size, spatial_locations, vis_features)
+            img = self.img_projector(img) # out: (batch_size, spatial_locations, d_model)
+            # TODO: decide if needed
+            img *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
+
         seq_len = tf.shape(x)[1]
-        # adding embedding and position encoding.
+        # adding embedding
         x = self.embedding(x)  # (batch_size, input_seq_len, d_model)
         x *= tf.math.sqrt(tf.cast(self.d_model, tf.float32))
-        x += self.pos_encoding[:, :seq_len, :]
+        # adding position encoding
+        if self.multi:
+            # Apply positional encoding to text + flattened projected image input
+            x = tf.concat([x, img], 1, name='concat'))
+            x += self.pos_encoding[:, :(seq_len+vf_len), :]
+        else:
+            x += self.pos_encoding[:, :seq_len, :]
 
         x = self.dropout(x, training=training)
 
-        for i in range(self.num_layers):
-            x = self.enc_layers[i](x, training, mask)
+        if self.multi:
+            word_emb = tf.identity(x[:, :seq_len, :]) # just word features, deep copy
+        else:
+            word_emb = x
 
-        return x  # (batch_size, input_seq_len, d_model)
+        for i in range(self.num_layers):
+            x = self.enc_layers[i](word_emb, x, training, mask)
+
+        # out_dim = (batch_size, input_seq_len+vf_len, d_model) if multi else (batch_size, input_seq_len, d_model)
+        return x
 
 
 def get_angles(pos, i, d_model):
@@ -252,12 +294,15 @@ class Decoder(tf.keras.layers.Layer):
 
 class Transformer(tf.keras.Model):
     def __init__(self, num_layers, d_model, num_heads, dff, input_vocab_size,
-                 target_vocab_size, pe_input, pe_target, rate=0.1,
-                 train_encoder_embedding=True, train_decoder_embedding=True):
+                 target_vocab_size, pe_input, pe_target, multi=False, vf_dim=None,
+                 rate=0.1, train_encoder_embedding=True, train_decoder_embedding=True):
         super(Transformer, self).__init__()
 
+        self.multi = multi
+
         self.encoder = Encoder(num_layers, d_model, num_heads, dff,
-                               input_vocab_size, pe_input, rate, name="encoder",
+                               input_vocab_size, pe_input, rate,
+                               multi, vf_dim, name="encoder",
                                train_embedding=train_encoder_embedding)
 
         self.decoder = Decoder(num_layers, d_model, num_heads, dff,
@@ -269,9 +314,17 @@ class Transformer(tf.keras.Model):
         self.input_vocab_size = input_vocab_size
         self.target_vocab_size = target_vocab_size
 
-    def call(self, inp, tar, training, enc_padding_mask,
+    def call(self, input_tuple, training, enc_padding_mask,
              look_ahead_mask, dec_padding_mask):
-        enc_output = self.encoder(inp, training, enc_padding_mask)  # (batch_size, inp_seq_len, d_model)
+
+        if self.multi:
+            inp, tar, img = input_tuple
+        else:
+            inp, tar = input_tuple
+            img = None
+
+        # if multi (batch_size, inp_seq_len + num_vf, d_model) else (batch_size, inp_seq_len, d_model)
+        enc_output = self.encoder(inp, training, enc_padding_mask, img)
 
         # dec_output.shape == (batch_size, tar_seq_len, d_model)
         dec_output, attention_weights = self.decoder(
