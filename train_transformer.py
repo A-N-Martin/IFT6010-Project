@@ -1,5 +1,5 @@
 """
-Train a transformer model to translate from source to target language
+Train a unimodal or multimodal transformer model to translate from source to target language
 """
 
 import argparse
@@ -15,7 +15,7 @@ from tensorflow.python.framework.errors_impl import NotFoundError
 
 from scripts.config import ConfigTrainTransformer
 from utils.data_utils import (build_tokenizer, create_transformer_dataset,
-                              project_root)
+                              create_transformer_multi_dataset, project_root, get_features)
 from utils.tensorboard_utils import get_summary_tf, hparams_transformer
 from utils.transformer_utils import (CustomSchedule, create_masks, load_transformer)
 from evaluator import generate_predictions, compute_bleu
@@ -77,10 +77,19 @@ def train_transformer(
     tokenizer_source_path = os.path.join(save_path, config["tokenizer_source_path"])
     tokenizer_target_path = os.path.join(save_path, config["tokenizer_target_path"])
 
+    multi = config["multi"] # if true, multimodal transformer receives image and text features
+    if multi:
+        vf_train_path = os.path.join(data_path, config["vfeature_training"])
+        vf_valid_path = os.path.join(data_path, config["vfeature_validation"])
+        # return tupple of numpy arrays... (for now)
+        vfeat_training, vfeat_validation = get_features((vf_train_path, vf_valid_path), config["vfeature_dims"])
+        #print(vfeat_train.shape, vfeat_val.shape)
+
     # Set hyperparameters
     d_model = config["d_model"]
     batch_size = config["batch_size"]
     epochs = config["epochs"]
+    vf_dim = config["vfeature_dims"]
 
     checkpoint_path = os.path.join(save_path, config["checkpoint_path"])
     checkpoint_path_best = os.path.join(save_path, config["checkpoint_path_best"])
@@ -108,6 +117,16 @@ def train_transformer(
 
         return source_tokenized, target_tokenized
 
+    def encode_multi(source, target, img):
+        # Add start and end token to text
+        source_tokenized = [tokenizer_source.vocab_size] + tokenizer_source.encode(
+            source.numpy()) + [tokenizer_source.vocab_size + 1]
+
+        target_tokenized = [tokenizer_target.vocab_size] + tokenizer_target.encode(
+            target.numpy()) + [tokenizer_target.vocab_size + 1]
+
+        return source_tokenized, target_tokenized, img
+
     def tf_encode(source, target):
         # encapsulate our encode function in a tf functions so it can be called on tf tensor
         result_source, result_target = tf.py_function(encode, [source, target], [tf.int64, tf.int64])
@@ -116,24 +135,59 @@ def train_transformer(
 
         return result_source, result_target
 
-    train_examples = create_transformer_dataset(
-        source_training, target_training, num_examples)
+    def tf_encode_multi(source, target, img):
+        # encapsulate our encode function in a tf functions so it can be called on tf tensor
+        result_source, result_target, result_img = tf.py_function(encode_multi, [source, target, img], [tf.int64, tf.int64, tf.float16])
+        result_source.set_shape([None])
+        result_target.set_shape([None])
+        # DO NOT set shape of image tensor to [None]: will create problems at padding if 3D is flattened
+        #result_target.set_shape(vf_dim)
 
-    validation_examples = create_transformer_dataset(source_validation, target_validation)
+        return result_source, result_target, result_img
 
-    train_preprocessed = (
-        # cache the dataset to memory to get a speedup while reading from it.
-        train_examples.map(tf_encode).cache().shuffle(buffer_size)
-    )
+    if multi:
+        # Multimodal adaptation based on: https://www.tensorflow.org/tutorials/text/image_captioning
+        train_examples = create_transformer_multi_dataset(
+            source_training, target_training, vfeat_training, num_examples)
 
-    val_preprocessed = (validation_examples.map(tf_encode))
+        validation_examples = create_transformer_multi_dataset(source_validation, target_validation,
+                                                               vfeat_validation)
 
-    train_dataset = (train_preprocessed
-                     .padded_batch(batch_size, padded_shapes=([None], [None]))
-                     .prefetch(tf.data.experimental.AUTOTUNE))
+        train_preprocessed = (
+            # cache the dataset to memory to get a speedup while reading from it.
+            # Shuffling will shuffle entire train set between epochs
+            # Check here: https://www.tensorflow.org/tutorials/text/image_captioning
+            train_examples.map(tf_encode_multi).cache().shuffle(buffer_size)
+        )
 
-    val_dataset = (val_preprocessed
-                   .padded_batch(1000, padded_shapes=([None], [None])))
+        val_preprocessed = (validation_examples.map(tf_encode_multi))
+
+        train_dataset = (train_preprocessed
+                         .padded_batch(batch_size, padded_shapes=([None], [None], vf_dim))
+                         .prefetch(tf.data.experimental.AUTOTUNE))
+
+        val_dataset = (val_preprocessed
+                       .padded_batch(1000, padded_shapes=([None], [None], vf_dim)))
+
+    else:
+        train_examples = create_transformer_dataset(
+            source_training, target_training, num_examples)
+
+        validation_examples = create_transformer_dataset(source_validation, target_validation)
+
+        train_preprocessed = (
+            # cache the dataset to memory to get a speedup while reading from it.
+            train_examples.map(tf_encode).cache().shuffle(buffer_size)
+        )
+
+        val_preprocessed = (validation_examples.map(tf_encode))
+
+        train_dataset = (train_preprocessed
+                         .padded_batch(batch_size, padded_shapes=([None], [None]))
+                         .prefetch(tf.data.experimental.AUTOTUNE))
+
+        val_dataset = (val_preprocessed
+                       .padded_batch(1000, padded_shapes=([None], [None])))
 
     # Use the Adam optimizer with a custom learning rate scheduler according to the formula
     # in the paper (https://arxiv.org/abs/1706.03762)
@@ -170,48 +224,105 @@ def train_transformer(
             ckpt.restore(ckpt_manager.latest_checkpoint)
             tf.print(f'Latest checkpoint restored from {checkpoint_path}')
 
-    train_step_signature = [
-        tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-        tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-    ]
 
-    @tf.function(input_signature=train_step_signature)
-    def train_step(inp, tar):
-        tar_inp = tar[:, :-1]
-        tar_real = tar[:, 1:]
+    if multi:
+        im_dims = tuple([None] + vf_dim)
+        train_step_signature = [
+            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=im_dims, dtype=tf.float16))
+        ]
 
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+        @tf.function(input_signature=train_step_signature)
+        def train_step(train_input):
+            inp, tar, img = train_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
 
-        with tf.GradientTape() as tape:
-            predictions, _ = transformer(inp, tar_inp,
+            # TODO: adjust mask dims for input?
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp, tuple(vf_dim))
+
+            inp_tuple = inp, tar_inp, img
+            with tf.GradientTape() as tape:
+                predictions, _ = transformer(inp_tuple,
+                                             True,
+                                             enc_padding_mask,
+                                             combined_mask,
+                                             dec_padding_mask)
+                loss = loss_function(tar_real, predictions)
+
+            gradients = tape.gradient(loss, transformer.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+
+            train_loss(loss)
+            train_accuracy(tar_real, predictions)
+
+        #@tf.function(input_signature=train_step_signature)
+        def validate(val_input):
+            inp, tar, img = val_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
+
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp, tuple(vf_dim))
+
+            inp_tuple = inp, tar_inp, img
+            predictions, _ = transformer(inp_tuple,
                                          True,
                                          enc_padding_mask,
                                          combined_mask,
                                          dec_padding_mask)
             loss = loss_function(tar_real, predictions)
 
-        gradients = tape.gradient(loss, transformer.trainable_variables)
-        optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+            val_loss(loss)
+            val_accuracy(tar_real, predictions)
 
-        train_loss(loss)
-        train_accuracy(tar_real, predictions)
+    else:
+        train_step_signature = [
+            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+            tf.TensorSpec(shape=(None, None), dtype=tf.int64))
+        ]
 
-    @tf.function(input_signature=train_step_signature)
-    def validate(inp, tar):
-        tar_inp = tar[:, :-1]
-        tar_real = tar[:, 1:]
+        @tf.function(input_signature=train_step_signature)
+        def train_step(train_input):
+            inp, tar = train_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
 
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
 
-        predictions, _ = transformer(inp, tar_inp,
-                                     True,
-                                     enc_padding_mask,
-                                     combined_mask,
-                                     dec_padding_mask)
-        loss = loss_function(tar_real, predictions)
+            inp_tuple = inp, tar_inp
+            with tf.GradientTape() as tape:
+                predictions, _ = transformer(inp_tuple,
+                                             True,
+                                             enc_padding_mask,
+                                             combined_mask,
+                                             dec_padding_mask)
+                loss = loss_function(tar_real, predictions)
 
-        val_loss(loss)
-        val_accuracy(tar_real, predictions)
+            gradients = tape.gradient(loss, transformer.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, transformer.trainable_variables))
+
+            train_loss(loss)
+            train_accuracy(tar_real, predictions)
+
+        @tf.function(input_signature=train_step_signature)
+        def validate(val_input):
+            inp, tar = val_input
+            tar_inp = tar[:, :-1]
+            tar_real = tar[:, 1:]
+
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(inp, tar_inp)
+
+            inp_tuple = inp, tar_inp
+            predictions, _ = transformer(inp_tuple,
+                                         True,
+                                         enc_padding_mask,
+                                         combined_mask,
+                                         dec_padding_mask)
+            loss = loss_function(tar_real, predictions)
+
+            val_loss(loss)
+            val_accuracy(tar_real, predictions)
 
     n_train_examples = int(tf.data.experimental.cardinality(train_examples).numpy())
     tf.print(f"Total of {n_train_examples} training examples")
@@ -228,18 +339,21 @@ def train_transformer(
         val_loss.reset_states()
         val_accuracy.reset_states()
 
-        for (batch, (inp, tar)) in enumerate(train_dataset):
-            train_step(inp, tar)
+        for (batch, input_tuple) in enumerate(train_dataset):
+                # input_tuple = (inp, tar, img) if multi else (inp, tar)
+                train_step(input_tuple)
 
-            if batch % 50 == 0:
-                tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
-                         f"Accuracy {train_accuracy.result():.4f}")
+                if batch % 50 == 0:
+                    tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
+                             f"Accuracy {train_accuracy.result():.4f}")
 
-        for (batch, (inp, tar)) in enumerate(val_dataset):
-            validate(inp, tar)
-            val_accuracy_result = val_accuracy.result()
-            tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
-                     f"Validation Accuracy {val_accuracy_result:.4f}")
+        for (batch, input_tuple) in enumerate(val_dataset):
+                # input_tuple = (inp, tar, img) if multi else (inp, tar)
+                validate(input_tuple)
+                val_accuracy_result = val_accuracy.result()
+                tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
+                         f"Validation Accuracy {val_accuracy_result:.4f}")
+
         if val_accuracy_result > best_val_accuracy:
             best_val_accuracy = val_accuracy_result
             ckpt_save_path_best = ckpt_manager_best.save()
@@ -263,6 +377,7 @@ def train_transformer(
     # Compute bleu score on best performing model
     #temp_file = os.path.join(project_root(), "temp_preds.txt")
     temp_file = os.path.join(save_path, "temp_preds.txt")
+    # TODO: check w image input, adjust code to generate predictions?
     generate_predictions(source_validation, temp_file, save_path, config_path)
     compute_bleu(temp_file, target_validation, print_all_scores)
     os.remove(temp_file)

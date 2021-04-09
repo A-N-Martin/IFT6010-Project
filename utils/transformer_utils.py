@@ -55,6 +55,8 @@ def load_transformer(
     dff = config["dff"]
     num_heads = config["num_heads"]
     dropout_rate = config["dropout_rate"]
+    multi = config["multi"]
+    vf_dim = tuple(config["vfeature_dims"])
 
     source_vocab_size = tokenizer_source.vocab_size + 2
     target_vocab_size = tokenizer_target.vocab_size + 2
@@ -64,6 +66,8 @@ def load_transformer(
                               source_vocab_size, target_vocab_size,
                               pe_input=source_vocab_size,
                               pe_target=target_vocab_size,
+                              multi=multi,
+                              vf_dim=vf_dim,
                               rate=dropout_rate,
                               train_encoder_embedding=train_encoder_embedding,
                               train_decoder_embedding=train_decoder_embedding
@@ -71,12 +75,22 @@ def load_transformer(
     return transformer
 
 
-def create_padding_mask(seq):
+def create_padding_mask(seq, vf_dim=None):
     """
     Create mask to use padding provided by input sequence
     :param seq: Input sequence
+    :param vf_dim: tupple of int, dim of input image features if multi
     :return: Mask that masks elements where input sequence is 0
     """
+    if vf_dim is not None:
+        batch_size = int(tf.shape(seq)[0])
+        # create list of 1s (int) unequal to 0 for number of spatial locations in vis input
+        num_spatialloc = 1 if len(vf_dim) == 1 else vf_dim[1]*vf_dim[2]
+        vf_placehold = tf.constant([1] * (batch_size * num_spatialloc))
+        vf_placehold = tf.cast(tf.reshape(vf_placehold, (batch_size, num_spatialloc)), tf.int64)
+        # add dummy variables !=0 to word sequence to generate mask
+        seq = tf.concat([seq, vf_placehold], axis=-1)
+
     seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
 
     # add extra dimensions to add the padding
@@ -94,11 +108,12 @@ def create_look_ahead_mask(size):
     return mask  # (seq_len, seq_len)
 
 
-def create_masks(inp, tar):
+def create_masks(inp, tar, vf_dim=None):
     """
     Create masks for transformer
     :param inp: input sequence
     :param tar: target sequence
+    :param vf_dim: tupple of int, dim of input image features if multi
     :return: encoder padding mask, combined_mask and decoder padding mask
     """
     # Encoder padding mask
@@ -106,7 +121,7 @@ def create_masks(inp, tar):
 
     # Used in the 2nd attention block in the decoder.
     # This padding mask is used to mask the encoder outputs.
-    dec_padding_mask = create_padding_mask(inp)
+    dec_padding_mask = create_padding_mask(inp, vf_dim)
 
     # Used in the 1st attention block in the decoder.
     # It is used to pad and mask future tokens in the input received by

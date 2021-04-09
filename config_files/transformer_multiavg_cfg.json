@@ -1,6 +1,6 @@
 {
   "num_examples": null,
-  "multi": false,
+  "multi": true,
   "num_layers": 4,
   "d_model": 256,
   "dff": 1024,
@@ -8,6 +8,9 @@
   "dropout_rate": 0.1,
   "batch_size": 64,
   "epochs": 100,
+  "vfeature_dims": [2048],
+  "vfeature_training": "data/images/res50_features/train-resnet50-avgpool.npy.bz2",
+  "vfeature_validation": "data/images/res50_features/val-resnet50-avgpool.npy.bz2",
   "source_training": "data/text/task1/tok/train.lc.norm.tok.de",
   "source_validation": "data/text/task1/tok/val.lc.norm.tok.de",
   "source_target_vocab_size": 8192,
