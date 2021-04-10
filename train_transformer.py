@@ -227,13 +227,13 @@ def train_transformer(
 
     if multi:
         im_dims = tuple([None] + vf_dim)
-        train_step_signature = [
-            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=im_dims, dtype=tf.float16))
-        ]
+        #train_step_signature = [
+        #    (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        #    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        #    tf.TensorSpec(shape=im_dims, dtype=tf.float16))
+        #]
 
-        @tf.function(input_signature=train_step_signature)
+        #@tf.function(input_signature=train_step_signature)
         def train_step(train_input):
             inp, tar, img = train_input
             tar_inp = tar[:, :-1]
@@ -277,12 +277,12 @@ def train_transformer(
             val_accuracy(tar_real, predictions)
 
     else:
-        train_step_signature = [
-            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=(None, None), dtype=tf.int64))
-        ]
+        #train_step_signature = [
+        #    (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        #    tf.TensorSpec(shape=(None, None), dtype=tf.int64))
+        #]
 
-        @tf.function(input_signature=train_step_signature)
+        #@tf.function(input_signature=train_step_signature)
         def train_step(train_input):
             inp, tar = train_input
             tar_inp = tar[:, :-1]
@@ -305,7 +305,7 @@ def train_transformer(
             train_loss(loss)
             train_accuracy(tar_real, predictions)
 
-        @tf.function(input_signature=train_step_signature)
+        #@tf.function(input_signature=train_step_signature)
         def validate(val_input):
             inp, tar = val_input
             tar_inp = tar[:, :-1]
