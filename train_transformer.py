@@ -238,6 +238,7 @@ def train_transformer(
 
         #@tf.function(input_signature=train_step_signature)
         def train_step(inp, tar, img):
+
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
@@ -279,12 +280,14 @@ def train_transformer(
 
     else:
         #train_step_signature = [
+
         #    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
         #    tf.TensorSpec(shape=(None, None), dtype=tf.int64)
         #]
 
         #@tf.function(input_signature=train_step_signature)
         def train_step(inp, tar):
+
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
@@ -306,7 +309,9 @@ def train_transformer(
             train_accuracy(tar_real, predictions)
 
         #@tf.function(input_signature=train_step_signature)
+
         def validate(inp, tar):
+
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
