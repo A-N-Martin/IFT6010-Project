@@ -14,7 +14,7 @@ import tensorflow_datasets as tfds
 from tensorflow.compat.v1 import ConfigProto, InteractiveSession
 
 from utils.transformer_utils import load_transformer, translate_file
-from utils.data_utils import project_root
+from utils.data_utils import project_root, get_features
 
 # The following config setting is necessary to work on my local RTX2070 GPU
 # Comment if you suspect it's causing trouble
@@ -26,11 +26,13 @@ os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
 
 def generate_predictions(
+        data_path: str,
         input_file_path: str,
         pred_file_path: str,
         saved_path: str,
         config_file: str,
-        max_lines_process: Optional[int] = None
+        max_lines_process: Optional[int] = None,
+        img_array = None
 ):
     """Generates predictions for the machine translation task (EN->FR).
     You are allowed to modify this function as needed, but one again, you cannot
@@ -38,11 +40,13 @@ def generate_predictions(
     in our final evaluation script. Since you will most definitely need to import
     modules for your code, you must import these inside the function itself.
     Args:
+        data_path: path to directory that contains "data" folder
         input_file_path: the file path that contains the input data.
         pred_file_path: the file path where to store the predictions.
         saved_path: path to directory where models/tokenizers are
         config_file: name of config file
         max_lines_process: maximum number of lines to translate (all of them if not specified)
+        img_array: numpy array of validation image features, if already unzipped (dtype = float16)
     Returns: None
     """
     start = time.time()
@@ -85,6 +89,15 @@ def generate_predictions(
     tokenizer_source = tfds.deprecated.text.SubwordTextEncoder.load_from_file(tokenizer_source_path)
     tokenizer_target = tfds.deprecated.text.SubwordTextEncoder.load_from_file(tokenizer_target_path)
 
+    multi = config["multi"] # if true, multimodal transformer receives both image and text features
+    vfeat_test = None
+    if multi:
+        if img_array is None:
+            vf_test_path = os.path.join(data_path, config["vfeature_test"])
+            vfeat_test, _ = get_features(vf_test_path)
+        else:
+            vfeat_test = img_array
+
     transformer = load_transformer(config, tokenizer_source, tokenizer_target)
 
     ckpt = tf.train.Checkpoint(transformer=transformer)
@@ -103,7 +116,7 @@ def generate_predictions(
 
     # Get translations in order of sentences length and dict to re-order them later
     results, sorted_keys = translate_file(transformer, tokenizer_source, tokenizer_target,
-                                          input_file_path, batch_size=translation_batch_size,
+                                          input_file_path, vfeat_test=vfeat_test, batch_size=translation_batch_size,
                                           max_lines_process=max_lines_process,
                                           beam_size=beam_size,
                                           alpha=alpha)

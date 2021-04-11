@@ -51,7 +51,7 @@ def main():
     else:
         source_file_path = os.path.join(data_path, config["source_test"])
         temp_file = os.path.join(save_path, "temp_preds.txt")
-        generate_predictions(source_file_path, temp_file, save_path, config_path)
+        generate_predictions(data_path, source_file_path, temp_file, save_path, config_path)
         compute_bleu(temp_file, target_file_path, print_all_scores)
         #os.remove(temp_file)
 

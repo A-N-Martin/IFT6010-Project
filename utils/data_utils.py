@@ -205,7 +205,7 @@ def build_tokenizer(file, target_vocab_size=2 ** 13):
         (line for line in language), target_vocab_size=target_vocab_size)
     return tokenizer
 
-def get_features(vfeat_paths, vfeat_dim):
+def get_features(vfeat_train_path, vfeat_val_path=None):
     '''
     Data type is .npy file saved from numpy with np.save() with feature-extractor.py script, compressed with bz2
     e.g., np.save(output + '-avgpool', pool_feats.astype('float16'))
@@ -214,10 +214,13 @@ def get_features(vfeat_paths, vfeat_dim):
     res4f_relu convolutional features of size 1024x14x14
 
     '''
-    f_train = bz2.open(vfeat_paths[0])
+    f_train = bz2.open(vfeat_train_path)
     vfeat_train = np.load(f_train) # numpy array, dim = num_ex x features
 
-    f_val = bz2.open(vfeat_paths[1])
-    vfeat_val = np.load(f_val)
+    if vfeat_val_path is not None:
+        f_val = bz2.open(vfeat_val_path)
+        vfeat_val = np.load(f_val)
+    else:
+        vfeat_val = None
 
     return vfeat_train, vfeat_val

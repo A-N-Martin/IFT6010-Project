@@ -214,7 +214,7 @@ class Encoder(tf.keras.layers.Layer):
         # adding position encoding
         if self.multi:
             # Apply positional encoding to text + flattened projected image input
-            x = tf.concat([x, img], 1, name='concat'))
+            x = tf.concat([x, img], 1, name='concat')
             x += self.pos_encoding[:, :(seq_len+vf_len), :]
         else:
             x += self.pos_encoding[:, :seq_len, :]

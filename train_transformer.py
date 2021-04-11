@@ -82,14 +82,17 @@ def train_transformer(
         vf_train_path = os.path.join(data_path, config["vfeature_training"])
         vf_valid_path = os.path.join(data_path, config["vfeature_validation"])
         # return tupple of numpy arrays... (for now)
-        vfeat_training, vfeat_validation = get_features((vf_train_path, vf_valid_path), config["vfeature_dims"])
+        vfeat_training, vfeat_validation = get_features(vf_train_path, vf_valid_path)
         #print(vfeat_train.shape, vfeat_val.shape)
+    else:
+        vfeat_validation = None
 
     # Set hyperparameters
     d_model = config["d_model"]
     batch_size = config["batch_size"]
     epochs = config["epochs"]
-    vf_dim = config["vfeature_dims"]
+    if multi:
+        vf_dim = config["vfeature_dims"]
 
     checkpoint_path = os.path.join(save_path, config["checkpoint_path"])
     checkpoint_path_best = os.path.join(save_path, config["checkpoint_path_best"])
@@ -227,15 +230,14 @@ def train_transformer(
 
     if multi:
         im_dims = tuple([None] + vf_dim)
-        train_step_signature = [
-            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=im_dims, dtype=tf.float16))
-        ]
+        #train_step_signature = [
+        #    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        #    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        #    tf.TensorSpec(shape=im_dims, dtype=tf.float16)
+        #]
 
-        @tf.function(input_signature=train_step_signature)
-        def train_step(train_input):
-            inp, tar, img = train_input
+        #@tf.function(input_signature=train_step_signature)
+        def train_step(inp, tar, img):
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
@@ -258,8 +260,7 @@ def train_transformer(
             train_accuracy(tar_real, predictions)
 
         #@tf.function(input_signature=train_step_signature)
-        def validate(val_input):
-            inp, tar, img = val_input
+        def validate(inp, tar, img):
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
@@ -277,14 +278,13 @@ def train_transformer(
             val_accuracy(tar_real, predictions)
 
     else:
-        train_step_signature = [
-            (tf.TensorSpec(shape=(None, None), dtype=tf.int64),
-            tf.TensorSpec(shape=(None, None), dtype=tf.int64))
-        ]
+        #train_step_signature = [
+        #    tf.TensorSpec(shape=(None, None), dtype=tf.int64),
+        #    tf.TensorSpec(shape=(None, None), dtype=tf.int64)
+        #]
 
-        @tf.function(input_signature=train_step_signature)
-        def train_step(train_input):
-            inp, tar = train_input
+        #@tf.function(input_signature=train_step_signature)
+        def train_step(inp, tar):
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
@@ -305,9 +305,8 @@ def train_transformer(
             train_loss(loss)
             train_accuracy(tar_real, predictions)
 
-        @tf.function(input_signature=train_step_signature)
-        def validate(val_input):
-            inp, tar = val_input
+        #@tf.function(input_signature=train_step_signature)
+        def validate(inp, tar):
             tar_inp = tar[:, :-1]
             tar_real = tar[:, 1:]
 
@@ -339,20 +338,35 @@ def train_transformer(
         val_loss.reset_states()
         val_accuracy.reset_states()
 
-        for (batch, input_tuple) in enumerate(train_dataset):
-                # input_tuple = (inp, tar, img) if multi else (inp, tar)
-                train_step(input_tuple)
+        if multi:
+            for (batch, (inp, tar, img)) in enumerate(train_dataset):
+                    train_step(inp, tar, img)
 
-                if batch % 50 == 0:
-                    tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
-                             f"Accuracy {train_accuracy.result():.4f}")
+                    if batch % 50 == 0:
+                        tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
+                                 f"Accuracy {train_accuracy.result():.4f}")
 
-        for (batch, input_tuple) in enumerate(val_dataset):
-                # input_tuple = (inp, tar, img) if multi else (inp, tar)
-                validate(input_tuple)
-                val_accuracy_result = val_accuracy.result()
-                tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
-                         f"Validation Accuracy {val_accuracy_result:.4f}")
+            for (batch, (inp, tar, img)) in enumerate(val_dataset):
+                    validate(inp, tar, img)
+                    val_accuracy_result = val_accuracy.result()
+                    tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
+                             f"Validation Accuracy {val_accuracy_result:.4f}")
+        else:
+            for (batch, (inp, tar)) in enumerate(train_dataset):
+                    # input_tuple = (inp, tar, img) if multi else (inp, tar)
+                    train_step(inp, tar)
+
+                    if batch % 50 == 0:
+                        tf.print(f"Epoch {epoch + 1} Batch {batch} Loss {train_loss.result():.4f} "
+                                 f"Accuracy {train_accuracy.result():.4f}")
+
+            for (batch, (inp, tar)) in enumerate(val_dataset):
+                    # input_tuple = (inp, tar, img) if multi else (inp, tar)
+                    validate(inp, tar)
+                    val_accuracy_result = val_accuracy.result()
+                    tf.print(f"Epoch {epoch + 1} Batch {batch} Validation Loss {val_loss.result():.4f} "
+                             f"Validation Accuracy {val_accuracy_result:.4f}")
+
 
         if val_accuracy_result > best_val_accuracy:
             best_val_accuracy = val_accuracy_result
@@ -378,7 +392,7 @@ def train_transformer(
     #temp_file = os.path.join(project_root(), "temp_preds.txt")
     temp_file = os.path.join(save_path, "temp_preds.txt")
     # TODO: check w image input, adjust code to generate predictions?
-    generate_predictions(source_validation, temp_file, save_path, config_path)
+    generate_predictions(data_path, source_validation, temp_file, save_path, config_path, img_array = vfeat_validation)
     compute_bleu(temp_file, target_validation, print_all_scores)
     os.remove(temp_file)
 
