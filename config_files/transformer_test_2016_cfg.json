@@ -7,7 +7,7 @@
   "dff": 1024,
   "num_heads": 4,
   "dropout_rate": 0.1,
-  "translation_batch_size": 48,
+  "translation_batch_size": 64,
   "source_test": "data/text/task1/tok/test_2016_flickr.lc.norm.tok.de",
   "target_test": "data/text/task1/tok/test_2016_flickr.lc.norm.tok.en",
   "checkpoint_path_best": "checkpoints/transformer/best",
@@ -16,6 +16,6 @@
   "beam_size": null,
   "alpha": null,
   "do_not_run_model": false,
-  "input_file": "results/temp_preds.txt",
+  "input_file": "results/temp_preds2016.txt",
   "print_all_scores": false
 }

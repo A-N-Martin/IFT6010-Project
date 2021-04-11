@@ -16,6 +16,6 @@
   "beam_size": 7,
   "alpha": 0.6,
   "do_not_run_model": false,
-  "input_file": "results/temp_preds.txt",
+  "input_file": "results/temp_preds2018.txt",
   "print_all_scores": false
 }
