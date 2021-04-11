@@ -391,7 +391,6 @@ def train_transformer(
     # Compute bleu score on best performing model
     #temp_file = os.path.join(project_root(), "temp_preds.txt")
     temp_file = os.path.join(save_path, "temp_preds.txt")
-    # TODO: check w image input, adjust code to generate predictions?
     generate_predictions(data_path, source_validation, temp_file, save_path, config_path, img_array = vfeat_validation)
     compute_bleu(temp_file, target_validation, print_all_scores)
     os.remove(temp_file)
