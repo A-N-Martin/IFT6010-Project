@@ -9,6 +9,8 @@ from gensim.models import KeyedVectors
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
+import bz2
+import numpy as np
 
 def project_root() -> str:
     """Returns project root folder."""
@@ -100,6 +102,44 @@ def create_transformer_dataset(
     return dataset
 
 
+def create_transformer_multi_dataset(
+        source: str,
+        target: Optional[str],
+        img_feat,
+        num_examples: Optional[int] = None,
+) -> tf.data.Dataset:
+    """
+    Takes a source and target file and return a dataset
+    :param source: path to source file
+    :param target: path to target file
+    :param img_feat: numpy array of image features
+    :param num_examples: max number of examples, take all if None
+    :return: tf Dataset object
+    """
+    with open(source, encoding="UTF-8") as source_file:
+        source_lines = source_file.readlines()
+    if target is not None:
+        with open(target, encoding="UTF-8") as target_file:
+            target_lines = target_file.readlines()
+        assert len(source_lines) == len(target_lines)
+
+    source_data = []
+    target_data = []
+    for source_line in source_lines[:num_examples]:
+        source_data.append(source_line.strip())
+    if target is not None:
+        for target_line in target_lines[:num_examples]:
+            target_data.append(target_line.strip())
+    else:
+        target_data = [""] * len(source_lines)
+
+    if num_examples is not None:
+        img_feat = img_feat[:num_examples]
+
+    dataset = tf.data.Dataset.from_tensor_slices((source_data, target_data, img_feat))
+    return dataset
+
+
 def tokenize(lang: List[str], lang_model: Optional[KeyedVectors]) -> Tuple:
     """
     Transforms a list of sentence into a list of list of indexes the correspond to their index in the
@@ -164,3 +204,23 @@ def build_tokenizer(file, target_vocab_size=2 ** 13):
     #tokenizer = tfds.features.text.SubwordTextEncoder.build_from_corpus(
         (line for line in language), target_vocab_size=target_vocab_size)
     return tokenizer
+
+def get_features(vfeat_train_path, vfeat_val_path=None):
+    '''
+    Data type is .npy file saved from numpy with np.save() with feature-extractor.py script, compressed with bz2
+    e.g., np.save(output + '-avgpool', pool_feats.astype('float16'))
+
+    avgpool features of size 2048D (1D, flattened array per input image)
+    res4f_relu convolutional features of size 1024x14x14
+
+    '''
+    f_train = bz2.open(vfeat_train_path)
+    vfeat_train = np.load(f_train) # numpy array, dim = num_ex x features
+
+    if vfeat_val_path is not None:
+        f_val = bz2.open(vfeat_val_path)
+        vfeat_val = np.load(f_val)
+    else:
+        vfeat_val = None
+
+    return vfeat_train, vfeat_val

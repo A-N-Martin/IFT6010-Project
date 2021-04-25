@@ -9,6 +9,7 @@ import os
 import tensorflow as tf
 from tensorflow.compat.v1 import ConfigProto, InteractiveSession
 
+from scripts.config import ConfigEvalTransformer
 from utils.data_utils import project_root
 from evaluator import generate_predictions, compute_bleu
 
@@ -38,7 +39,7 @@ def main():
 
     assert os.path.isfile(config_path), f"invalid config file: {config_path}"
     with open(config_path, "r") as f_in:
-        config: ConfigTrainTransformer = json.load(f_in)
+        config: ConfigEvalTransformer = json.load(f_in)
 
     target_file_path = os.path.join(data_path, config["target_test"])
     print_all_scores = config["print_all_scores"]
@@ -50,7 +51,7 @@ def main():
     else:
         source_file_path = os.path.join(data_path, config["source_test"])
         temp_file = os.path.join(save_path, "temp_preds.txt")
-        generate_predictions(source_file_path, temp_file, save_path, config_path)
+        generate_predictions(data_path, source_file_path, temp_file, save_path, config_path)
         compute_bleu(temp_file, target_file_path, print_all_scores)
         #os.remove(temp_file)
 

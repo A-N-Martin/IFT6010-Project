@@ -1,6 +1,6 @@
 #!/bin/bash
-
-FOLDER="/Users/mombot/Documents/Courses/IFT6010/Projet/IFT6010-Project"
+#FOLDER="/Users/mombot/Documents/Courses/IFT6010/Projet/IFT6010-Project"
+FOLDER="/home/Allmightyme/IFT6010-Project"
 config_file=${1}
 cfg_path="${FOLDER}/config_files/${config_file}"
 

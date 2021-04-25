@@ -9,7 +9,6 @@ import tensorflow_datasets as tfds
 
 from scripts.config import ConfigEvalTransformer, ConfigTrainTransformer
 from models.Transformer import Transformer
-from utils.embeddings_utils import get_pretrained_weights
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
@@ -55,6 +54,8 @@ def load_transformer(
     dff = config["dff"]
     num_heads = config["num_heads"]
     dropout_rate = config["dropout_rate"]
+    multi = config["multi"]
+    vf_dim = tuple(config["vfeature_dims"]) if multi else None
 
     source_vocab_size = tokenizer_source.vocab_size + 2
     target_vocab_size = tokenizer_target.vocab_size + 2
@@ -64,6 +65,8 @@ def load_transformer(
                               source_vocab_size, target_vocab_size,
                               pe_input=source_vocab_size,
                               pe_target=target_vocab_size,
+                              multi=multi,
+                              vf_dim=vf_dim,
                               rate=dropout_rate,
                               train_encoder_embedding=train_encoder_embedding,
                               train_decoder_embedding=train_decoder_embedding
@@ -71,12 +74,22 @@ def load_transformer(
     return transformer
 
 
-def create_padding_mask(seq):
+def create_padding_mask(seq, vf_dim=None):
     """
     Create mask to use padding provided by input sequence
     :param seq: Input sequence
+    :param vf_dim: tupple of int, dim of input image features if multi
     :return: Mask that masks elements where input sequence is 0
     """
+    if vf_dim is not None:
+        batch_size = int(tf.shape(seq)[0])
+        # create list of 1s (int) unequal to 0 for number of spatial locations in vis input
+        num_spatialloc = 1 if len(vf_dim) == 1 else vf_dim[1]*vf_dim[2]
+        vf_placehold = tf.constant([1] * (batch_size * num_spatialloc))
+        vf_placehold = tf.cast(tf.reshape(vf_placehold, (batch_size, num_spatialloc)), tf.int64)
+        # add dummy variables !=0 to word sequence to generate mask
+        seq = tf.concat([seq, vf_placehold], axis=-1)
+
     seq = tf.cast(tf.math.equal(seq, 0), tf.float32)
 
     # add extra dimensions to add the padding
@@ -94,11 +107,12 @@ def create_look_ahead_mask(size):
     return mask  # (seq_len, seq_len)
 
 
-def create_masks(inp, tar):
+def create_masks(inp, tar, vf_dim=None):
     """
     Create masks for transformer
     :param inp: input sequence
     :param tar: target sequence
+    :param vf_dim: tupple of int, dim of input image features if multi
     :return: encoder padding mask, combined_mask and decoder padding mask
     """
     # Encoder padding mask
@@ -106,7 +120,7 @@ def create_masks(inp, tar):
 
     # Used in the 2nd attention block in the decoder.
     # This padding mask is used to mask the encoder outputs.
-    dec_padding_mask = create_padding_mask(inp)
+    dec_padding_mask = create_padding_mask(inp, vf_dim)
 
     # Used in the 1st attention block in the decoder.
     # It is used to pad and mask future tokens in the input received by
@@ -173,7 +187,9 @@ def evaluate(encoder_input: tf.Tensor,
              tokenizer_target: tfds.deprecated.text.SubwordTextEncoder,
              transformer: Transformer,
              beam_size: Optional[int],
-             alpha: Optional[float]) -> tf.Tensor:
+             alpha: Optional[float],
+             input_img = None,
+             vf_dim = None) -> tf.Tensor:
     """
     Takes encoded input sentence ands generate the sequence of tokens for its translation
     :param encoder_input: Encoded input sentences
@@ -181,8 +197,12 @@ def evaluate(encoder_input: tf.Tensor,
     :param transformer: Trained Transformer model
     :param beam_size: Beam size used in beam search
     :param alpha: alpha parameter for beam search
+    :param input_img: image feature tensor if multimdodal
+    :param vf_dim: tuple of dim of image feature tensor if multimodal
     :return: Output sentences encoded for target language
     """
+    multi = (input_img is not None)
+
     start_token = tokenizer_target.vocab_size
     end_token = tokenizer_target.vocab_size + 1
     # The first word to the transformer should be the target start token
@@ -203,12 +223,16 @@ def evaluate(encoder_input: tf.Tensor,
         # length penalty is neutralized when alpha = 0.0; Wu et al 2016 suggest alpha = [0.6-0.7]
         # Initialized to 1 =  no length penalty
         length_penalty = 1.0
-        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output)
+        enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output, vf_dim)
 
         batch_size = encoder_input.shape[0]
+        # if unimodal (text only), input_img is None:
+        if multi:
+            inp_tuple = encoder_input, output, input_img
+        else:
+            inp_tuple = encoder_input, output
         # First pass, only one candidate per line : ["start_token"]
-        predictions, _ = transformer(encoder_input,
-                                     output,
+        predictions, _ = transformer(inp_tuple,
                                      False,
                                      enc_padding_mask,
                                      combined_mask,
@@ -233,10 +257,13 @@ def evaluate(encoder_input: tf.Tensor,
             old_length_penalty = length_penalty
             length_penalty = ((5 + i + 2) / 6) ** alpha  # (5+len(decode)/6) ^ alpha
 
-            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output)
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output, vf_dim)
+            if multi:
+                inp_tuple = encoder_input, output, input_img
+            else:
+                inp_tuple = encoder_input, output
             # Get predictions for next word for all candidates
-            predictions, _ = transformer(encoder_input,
-                                         output,
+            predictions, _ = transformer(inp_tuple,
                                          False,
                                          enc_padding_mask,
                                          combined_mask,
@@ -287,10 +314,14 @@ def evaluate(encoder_input: tf.Tensor,
         output = tf.reshape(output, (batch_size, beam_size, -1))[:, 0]
     else:
         for _ in range(max_length_pred):
-            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output)
+            enc_padding_mask, combined_mask, dec_padding_mask = create_masks(encoder_input, output, vf_dim)
+            # if unimodal (text only), input_img is None:
+            if multi:
+                inp_tuple = encoder_input, output, input_img
+            else:
+                inp_tuple = encoder_input, output
             # predictions.shape == (batch_size, seq_len, vocab_size)
-            predictions, _ = transformer(encoder_input,
-                                         output,
+            predictions, _ = transformer(inp_tuple,
                                          False,
                                          enc_padding_mask,
                                          combined_mask,
@@ -373,11 +404,12 @@ def translate_string(inp_sentence: str, tokenizer_source: tfds.deprecated.text.S
     return predicted_sentence
 
 
-def _get_sorted_inputs(filename: str, max_line_process: Optional[int]) -> Tuple:
+def _get_sorted_inputs(filename: str, max_line_process: Optional[int], dont_sort_input: bool) -> Tuple:
     """
     Sort sentences by input lenght
     :param filename: Path to input file
     :param max_line_process: Number of line (first N lines) to keep
+    :dont_sort_input: sort input sentences if False
     :return: The sentences sorted by length and the dict to re-order them later
     """
     with open(filename) as input_file:
@@ -391,6 +423,8 @@ def _get_sorted_inputs(filename: str, max_line_process: Optional[int]) -> Tuple:
     sorted_inputs = []
     sorted_keys = {}
     for i, (index, _) in enumerate(sorted_input_lens):
+        if dont_sort_input:
+            index = i
         sorted_inputs.append(inputs[index])
         sorted_keys[index] = i
     return sorted_inputs, sorted_keys
@@ -431,6 +465,7 @@ def translate_file(transformer: Transformer,
                    input_file: str,
                    beam_size: Optional[int],
                    alpha: Optional[float],
+                   vfeat_test = None,
                    batch_size: int = 32,
                    print_all_translations: bool = True,
                    max_lines_process: Optional[int] = None
@@ -443,39 +478,65 @@ def translate_file(transformer: Transformer,
     :param input_file: Path to input file
     :param beam_size: Size of beam for beam search
     :param alpha: alpha parameter for beam search
+    :param vfeat_test: numpy array of visual features for test set
     :param batch_size: Batch size
     :param print_all_translations: Will print first translated sentence of every batch if True
     :param max_lines_process: Will translate only the first max_lines_process from input file
     :return: The translated sentences in a python list (sorted by input sentence length),
             The dict to re-order the sentences in the original order
     """
+    # if true, multimodal input and model
+    dont_sort_input = multi = (vfeat_test is not None)
+    vf_dim = vfeat_test.shape[1:] if multi else None
+
     # Read and sort inputs by length. Keep dictionary (original index-->new index
     # in sorted list) to write translations in the original order.
-    sorted_inputs, sorted_keys = _get_sorted_inputs(input_file, max_lines_process)
+    # if multimodal, DO NOT sort input sentences
+    sorted_inputs, sorted_keys = _get_sorted_inputs(input_file, max_lines_process, dont_sort_input)
     num_decode_batches = (len(sorted_inputs) - 1) // batch_size + 1
+
 
     def input_generator() -> Generator[List[int], None, None]:
         """
-        Generator that yield encoded sentence from sorted inputs
+        Multi: Generator that yield encoded sentence and image feature tuple from unsorted inputs
+        Text: Generator that yield encoded sentence from sorted inputs
         """
         for j, line in enumerate(sorted_inputs):
-            if j % batch_size == 0:
-                batch_num = (j // batch_size) + 1
-                tf.print(f"Decoding batch {batch_num} out of {num_decode_batches}.")
-            yield _encode_and_add_tokens(line, tokenizer_source)
+            if multi:
+                if j % batch_size == 0:
+                    batch_num = (j // batch_size) + 1
+                    tf.print(f"Decoding batch {batch_num} out of {num_decode_batches}.")
+                yield _encode_and_add_tokens(line, tokenizer_source),  vfeat_test[j]
+            else:
+                if j % batch_size == 0:
+                    batch_num = (j // batch_size) + 1
+                    tf.print(f"Decoding batch {batch_num} out of {num_decode_batches}.")
+                yield _encode_and_add_tokens(line, tokenizer_source)
 
     def input_fn() -> tf.data.Dataset:
         """
         Create batched dataset of encoded inputs
         :return: batched dataset
         """
-        dataset = tf.data.Dataset.from_generator(input_generator, tf.int64, tf.TensorShape([None]))
-        dataset = dataset.padded_batch(batch_size, [None])
+        if multi:
+            dataset = tf.data.Dataset.from_generator(input_generator, (tf.int64, tf.float16))
+            dataset = dataset.padded_batch(batch_size, ([None], vf_dim))
+        else:
+            dataset = tf.data.Dataset.from_generator(input_generator, tf.int64, tf.TensorShape([None]))
+            dataset = dataset.padded_batch(batch_size, [None])
         return dataset
 
     translations = []
-    for i, input_seq in enumerate(input_fn()):
-        predictions = evaluate(input_seq, tokenizer_target, transformer, beam_size, alpha)
+
+
+    for i, batch_input in enumerate(input_fn()):
+        if multi:
+            input_seq, input_img = batch_input
+        else:
+            input_seq = batch_input
+            input_img = None
+
+        predictions = evaluate(input_seq, tokenizer_target, transformer, beam_size, alpha, input_img, vf_dim)
         for prediction in predictions:
             translation = _trim_and_decode(prediction, tokenizer_target)
             translations.append(translation)

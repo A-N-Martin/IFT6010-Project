@@ -1,8 +1,12 @@
-Subword Neural Machine Translation
+Source : Subword Neural Machine Translation
 ==================================
 
+The following text is from the Subword Neural Machine Translation Repository's ReadMe
+Link : https://github.com/rsennrich/subword-nmt/tree/80b7c1449e2e26673fb0b5cae993fe2d0dc23846
+Words and intructions below are the authors', which we (Marie and Annabelle) leave here as a reference. 
+
 This repository contains preprocessing scripts to segment text into subword
-units. The primary purpose is to facilitate the reproduction of our experiments
+units. The primary purpose is to facilitate the reproduction of experiments
 on Neural Machine Translation with subword units (see below for reference).
 
 USAGE INSTRUCTIONS
