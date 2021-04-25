@@ -13,7 +13,8 @@ Our Tensorflow 2.4.1 implementation of the Transformer is based on the following
 We  replaced  the  encoder’s  self-attention  layer  with  a  multi-modal self-attention layer that can process text and visual information, based on an approach introduced by Yao and Wan (2020).
 https://www.aclweb.org/anthology/2020.acl-main.400/
 
-We contacted the authors via email, and they kindly shared a link to a repository that includes their implementation (https://github.com/QAQ-v/MMT; code in Pytorch). This repository has just become publicly available on https://paperswithcode.com/ \ We based ourselves on this code to integrate the multi-modal self-attention layer within our multimodal Tensorflow implementation.
+We contacted the authors via email, and they kindly shared a link to a repository that includes their implementation (https://github.com/QAQ-v/MMT; code in Pytorch). This repository has just become publicly available on https://paperswithcode.com/ \
+We based ourselves on this code to integrate the multi-modal self-attention layer within our multimodal Tensorflow implementation.
 
 Our models were trained and tested with MM-NMT benchmark dataset Multi30k (Elliot et al., 2016; http://www.aclweb.org/anthology/W16-3210), which we downloaded from the following repository: https://github.com/multi30k/dataset \
 Image features are not included in the current repository due to space considerations. Visual features pre-extracted with a ResNet50 pre-trained on ImageNet can be downloaded from Google Drive (https://drive.google.com/drive/folders/1I2ufg3rTva3qeBkEc-xDpkESsGkYXgCf) and saved under ./data/images/res50_features. Raw images can be requested from the Dep. of Computer Sciences of the University of Illinois at Urbana-Champaign (https://forms.illinois.edu/sec/229675).
