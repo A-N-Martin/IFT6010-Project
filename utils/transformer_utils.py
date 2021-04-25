@@ -9,7 +9,6 @@ import tensorflow_datasets as tfds
 
 from scripts.config import ConfigEvalTransformer, ConfigTrainTransformer
 from models.Transformer import Transformer
-from utils.embeddings_utils import get_pretrained_weights
 
 
 class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
