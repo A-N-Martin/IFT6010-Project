@@ -1,6 +1,7 @@
 {
   "num_examples": null,
   "multi": true,
+  "shuffled": true,  
   "num_layers": 4,
   "d_model": 256,
   "dff": 1024,

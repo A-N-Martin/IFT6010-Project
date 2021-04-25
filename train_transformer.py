@@ -8,6 +8,7 @@ import os
 import time
 from typing import List, Union
 
+import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from tensorflow.compat.v1 import ConfigProto, InteractiveSession
@@ -84,6 +85,10 @@ def train_transformer(
         # return tupple of numpy arrays... (for now)
         vfeat_training, vfeat_validation = get_features(vf_train_path, vf_valid_path)
         #print(vfeat_train.shape, vfeat_val.shape)
+        shuffled = config["shuffled"] # if true, randomly shuffle images in the train set
+        if shuffled:
+            # shuffles the array in place along the first axis of a multi-dimensional array
+            np.random.shuffle(vfeat_training)
     else:
         vfeat_validation = None
 
