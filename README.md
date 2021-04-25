@@ -1,69 +1,46 @@
-# IFT6010-Project
+# IFT6010-Project, UdeM, Winter 2021
 
-The link for the Multi30K dataset in GitHub: https://github.com/multi30k/dataset
+Multimodal Machine Translation with Deep Learning
 
-I'm not sure if the pytorch multi30k dataset include the image.
+Annabelle Martin, 891129, annabelle.martin@umontreal.ca
+Marie St-Laurent, 657930, marie.st-laurent@umontreal.ca
+
+## Summary
+We contrasted multimodal and unimodal  neural  machine  translation  (NMT)  to explore whether visual features can improve  the  quality of  translation  for  textual  image  descriptions.
+
+Our Tensorflow 2.4.1 implementation of the Transformer is based on the following tutorial: https://www.tensorflow.org/tutorials/text/transformer
+
+We  replaced  the  encoder’s  self-attention  layer  with  a  multi-modal self-attention layer that can process text and visual information, based on an approach introduced by Yao and Wan (2020).
+https://www.aclweb.org/anthology/2020.acl-main.400/
+
+We contacted the authors via email, and they kindly shared a link to a repository that includes their implementation (https://github.com/QAQ-v/MMT; code in Pytorch). This repository has just become publicly available on https://paperswithcode.com/
+We based ourselves on this code to integrate the multi-modal self-attention layer within our multimodal Tensorflow implementation.
+
+Our models were trained and tested with MM-NMT benchmark dataset Multi30k (Elliot et al., 2016; http://www.aclweb.org/anthology/W16-3210), which we downloaded from the following repository: https://github.com/multi30k/dataset
+Image features are not included in the current repository due to space considerations. Visual features pre-extracted with a ResNet50 pre-trained on ImageNet can be downloaded from Google Drive (https://drive.google.com/drive/folders/1I2ufg3rTva3qeBkEc-xDpkESsGkYXgCf) and saved under ./data/images/res50_features. Raw images can be requested from the Dep. of Computer Sciences of the University of Illinois at Urbana-Champaign (https://forms.illinois.edu/sec/229675).
+
+In our experiments, models were trained to translate from German to English to facilitate our qualitative assessment of translation quality (we are not fluent in German). We either used visual features outputted from the 4th or average pooling layers of a ResNet50 (made available with Multi30k). Our baselines included a unimodal Transformer, and a multimodal Transformer trained on randomly shuffled images that were not associated with the source and target parallel sentences.
+
+Translation  quality was measured with the BLEU score (Papineni et al., 2002), which we computed using  the  SACREBLEU  implementation  introduced  by  Post  (2018) based  on  a  script  provided for UdeM class IFT6759 (Winter 2020; https://github.com/mila-iqia/ift6759)
+
+## Train the model with train_transformer.py
+
+From the project root folder, type the following command:
+
+./train_transformer.sh config_file_name.json
+
+Bash script `train_transformer.sh` calls train_transformer.py  to train a model. The bash script takes as its sole argument the name of the config file that specifies the experimental variables (source and target text files, model hyper-parameters, etc). Config files must be saved under ./config_files
+(several examples are saved under ./config_files).
+
+Within the config .json files, set "shuffled": true for multimodal models to randomly shuffle the order of the image features in the training batch (so that images do not correspond to the source and target text).
 
 
-# ift6759_project2
-Low-ressource machine translation system for IFT6759 course
+## Evaluate model performance on a test set with evaluator.py
 
-## Run the evaluator.py on the test set
+From the project root folder, type the following command:
 
-Use the bash script in `scripts/evaluator.sh` to run the evaluation tests. The script
-uses the virtual environment in our submission team folder (at `/project/cq-training-1/project2/submissions/team09/code/venv/` on the cluster).
-The script then submits a job to helios to run the evaluation on a compute-node. To run the evaluation script:
-```bash
-sbatch scripts/evaluator.sh [input-file-path] [target-file-path] [print-all-scores]
-```
-Make sure to call the script from inside `/project/cq-training-1/project2/submissions/team09/code`
+./test_transformer.sh config_file_name.json
 
-Also make sure that the [input-file-path] and [target-file-path] are the *absolute* path and not the relative path
-to the current folder from where the script is ran. The third argument [print-all-scores] is an optional flag and will
-default to false if not set.
-For example, we ran the command
-```bash
-sbatch scripts/evaluator.sh /project/cq-training-1/project2/submissions/team09/code/data/validation.lang1 /project/cq-training-1/project2/submissions/team09/code/data/validation.lang2
-```
-to make sure that the evaluator script was working, where the `validation.lang` files contain 1k parallel sentences.
+Bash script `evaluator.sh` calls test_transformer.py to test a pretrained model on a specified test set. The bash script takes as its sole argument the name of the config file that specifies the experimental variables. Config files must be saved under ./config_files
 
-TROUBLESHOOTING:
-Make sure that our model is loaded, you should see the line:
-Latest checkpoint restored from  `/project/cq-training-1/project2/submissions/team09/model/second_iteration_forward`
-in your slurm file. If not, try running the code again, making sure you are calling the script from the correct directory.
-
-If you get a OOM error, try lowering the translation_batch_size parameter in the config file at:
-`/project/cq-training-1/project2/submissions/team09/code/config_files/transformer_eval_cfg.json`
-batch size of 48 worked fine on our validation set but longer sequences or more samples might necessitate a lower batch size.
-## Training the Transformer
-From the project root folder, type the following command
-```bash
-python -m src.train_transformer --cfg_path config_files/transformer_cfg.json
-```
-Note, the content of the data folder should be the same as the data folder of the shared team directory on Helios
-
-## Evaluate the model
-The generate predictions is currently configured for the transformer model. Make sure the config file path is up
-to date and load the necessary parameters
-```bash
-python -m src.evaluator --target-file-path path_to_target_file --input-file-path path_to_input_file
-```
-
-## Generate synthetic data
-To generate some synthetic data on unaligned data using back-translation, you can type the following command:
-```bash
-python -m src.generate_synthetic -i [input_file_path] -c [config_file] -n [number_of_lines]
-```
-You can also use the script at `scripts/generate_synthetic.sh` with the command:
-```bash
-sbatch scripts/evaluator.sh [name_input_file] [config_file] [num_lines]
-```
-* [name_input_file] is the name of the file in the `.data/` folder <br>
-* [config_file] is the name of config file in the `.config_files/` folder <br>
-* [num_lines] is the number of sentences to translate if you want to translate only a subset of the input file.
-
-### Sample lines from text file
-To sample sentences from a text file, use the command:
-```bash
-python -m src.utils.sample_txt_file -i [input_file_path] -n [num_lines]
-```
+The script calculates BLEU on the specified test set, and it saves translated output as a text file (temp_preds.txt) under ./results 
