@@ -8,7 +8,7 @@
   "num_heads": 4,
   "dropout_rate": 0.1,
   "batch_size": 64,
-  "epochs": 100,
+  "epochs": 20,
   "vfeature_dims": [1024, 14, 14],
   "vfeature_training": "data/images/res50_features/train-resnet50-res4frelu.npy.bz2",
   "vfeature_validation": "data/images/res50_features/val-resnet50-res4frelu.npy.bz2",
