@@ -2,8 +2,8 @@
 
 Multimodal Machine Translation with Deep Learning
 
-Annabelle Martin, 891129, annabelle.martin@umontreal.ca \
-Marie St-Laurent, 657930, marie.st-laurent@umontreal.ca
+Annabelle Martin, annabelle.martin@umontreal.ca \
+Marie St-Laurent, marie.st-laurent@umontreal.ca
 
 ## Summary
 We contrasted multimodal and unimodal  neural  machine  translation  (NMT)  to explore whether visual features can improve  the  quality of  translation  for  textual  image  descriptions.
